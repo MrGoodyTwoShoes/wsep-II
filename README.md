@@ -10,13 +10,13 @@ Version 1.0 — March 2026
 
 |FEATURE|STATUS|
 |-|-|
-|Satellite tracking|Confirmed|
-|ISS pass prediction|Confirmed|
-|3D globe visualization|Confirmed|
-|African satellite highlighting|Confirmed|
-|Satellite identification|Feasible|
+|Satellite tracking|InProg|
+|ISS pass prediction|InProg|
+|Weather prediction|InProg|
+|3D globe visualization|InProg|
+|African satellite highlighting|InProg|
+|Satellite identification|Confirmed|
 |ISS radio windows|Confirmed (With Limitations)|
-|Weather prediction|External data required|
 |Black Ear alien detection|Educational simulation only|
 |TLE Transmission Delay(s), Server Load Mgt, Smooth UX, Multiple Ext. Data Srcs, SAT ID (Lighting can affect data and info accuracy)|Miscellaneous Risks|
 
