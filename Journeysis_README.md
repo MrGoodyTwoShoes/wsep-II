@@ -9,10 +9,7 @@ Mission Document / README
 Version 1.0 — March 2026
 
 
-
 SUMMARY OF THE WANETOPIAN SPACE EXPLORER PROGRAM JOURNEYSIS
-
-
 
 |FEATURE|STATUS|
 |-|-|
@@ -29,40 +26,21 @@ SUMMARY OF THE WANETOPIAN SPACE EXPLORER PROGRAM JOURNEYSIS
 &#x09;
 
 **1. Mission Statement**
-
-
-
 The Wanetopian Space Exploration Platform (WSEP) is an Africa-focused space intelligence and visualization system designed to monitor satellite activity across the African sky in real time.
-
 
 
 WSEP aims to make orbital information understandable, accessible, and visually engaging for users across the continent by combining public satellite data, lightweight web technologies, and immersive design.
 
 
-
 The platform will function as an African Space Intelligence Dashboard, enabling users to observe satellites passing over Africa, analyze orbital patterns, and explore Africa’s growing role in space technology.
 
 
-
 Guiding philosophy:
-
-
-
 “Blue Is The New Black.”
-
-
-
 This represents twilight—the moment satellites become visible—and symbolizes Africa stepping into the space age.
 
-
-
 **2. Core Objectives**
-
-
-
 WSEP is designed to:
-
-
 
 Track satellites over Africa in near real time
 
@@ -75,20 +53,11 @@ Visualize satellite constellations
 Educate users on orbital mechanics
 
 
-
 Focus: performance, accessibility, clarity
 
-
-
 **3. System Overview**
-
 **Frontend Interface**
-
-
-
 Browser-based visualization system.
-
-
 
 **Responsibilities:**
 
@@ -99,9 +68,6 @@ Display info panels
 Provide interactivity
 
 Optional spatial audio
-
-
-
 **Tech stack:**
 
 JavaScript
@@ -111,16 +77,8 @@ WebGL
 Three.js
 
 HTML/CSS
-
-
-
 **Backend Processing Server**
-
-
-
 Handles heavy computation.
-
-
 
 **Responsibilities:**
 
@@ -134,8 +92,6 @@ Data updates
 
 API endpoints
 
-
-
 **Tech stack:**
 
 Python
@@ -144,13 +100,9 @@ FastAPI / Flask
 
 SGP4
 
-
-
 **Design principle:**
 
 Heavy lifting stays server-side → smoother UX for low-end devices.
-
-
 
 **4. Orbital Tracking Method**
 
@@ -160,23 +112,13 @@ TLE (Two-Line Element) data
 
 SGP4 propagation model
 
-
-
 This allows calculation of satellite positions at any time.
-
 
 
 Accuracy: \~1–3 km (depends on TLE freshness)
 
-
-
 **5. Data Sources**
-
-
-
 Primary:
-
-
 
 **CelesTrak**
 
@@ -186,14 +128,13 @@ Public space agency datasets
 
 Mission records
 
-6\. Core Features (v1)
+**6 Core Features (v1)**
 
 6.1 Real-Time Satellite Tracking
 
 Live satellite movement
 
 Africa-focused highlighting
-
 
 
 **Displays:**
@@ -206,13 +147,8 @@ Velocity
 
 Orbit path
 
-6.2 Satellite Pass Prediction
-
-
-
+**6.2 Satellite Pass Prediction**
 Example:
-
-
 
 Location: Nairobi
 
@@ -226,20 +162,11 @@ Direction: SW → NE
 
 Duration: 7 min
 
-
-
 Computed on backend → sent via API.
 
 
-
 **6.3 Satellite Identification Tool**
-
-
-
 Matches:
-
-
-
 Location
 
 Time
@@ -248,20 +175,10 @@ Altitude
 
 Orbit path
 
-
-
 Returns likely satellite.
 
-
-
 **6.4 African Satellite Registry**
-
-
-
 Database includes:
-
-
-
 Mission name
 
 Launch date
