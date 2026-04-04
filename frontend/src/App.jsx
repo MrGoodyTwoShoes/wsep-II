@@ -12,25 +12,10 @@ import AIInsightBox from './components/panels/AIInsightBox'
 import CountyDetailPanel from './components/panels/CountyDetailPanel'
 import RoadStatusPanel from './components/panels/RoadStatusPanel'
 import AIProjections from './components/panels/AIProjections'
-import RoadStatusPanel from './components/panels/RoadStatusPanel'
+import mockData from './data/mockData'
 
-// Fallback data if backend fails
-const defaultData = {
-    global: { temperature: 26.4, co2: 426.1, renewableShare: 46.2, risk: 37.7 },
-    energy: [
-        { name: 'Solar', value: 38 },
-        { name: 'Wind', value: 22 },
-        { name: 'Hydro', value: 28 },
-        { name: 'Fossil', value: 12 }
-    ],
-    transport: { petrol: 42, diesel: 28, ev: 30, co2Reduction: 11, adoptionTrend: [] },
-    trends: [],
-    satelliteInsights: [],
-    riskAlerts: [],
-    projections: { temperatureRise: 2.8, riskEscalation: 17, timeline: [] },
-    countyData: [],
-    countiesGeo: { type: 'FeatureCollection', features: [] }
-}
+// Fallback / initial data — full mockData ensures map and charts render immediately
+const defaultData = mockData
 
 export default function App() {
     const [data, setData] = useState(defaultData)
@@ -39,7 +24,7 @@ export default function App() {
     const [satellitesPayload, setSatellitesPayload] = useState(null)
     const [roadStatus, setRoadStatus] = useState(null)
 
-    const BACKEND_BASE = process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
+    const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'https://h44dmzlr-5173.uks1.devtunnels.ms/'
 
     // Fetch unified dashboard data from backend
     useEffect(() => {
@@ -139,12 +124,12 @@ export default function App() {
     }, [data.countyData])
 
     useEffect(() => {
-        const refreshRoadStatus = async () => {
-            if (!selectedCountyData) {
-                setRoadStatus(null)
-                return
-            }
+        // Clear stale data immediately so the previous county's info never bleeds through
+        setRoadStatus(null)
 
+        if (!selectedCountyData) return
+
+        const refreshRoadStatus = async () => {
             const endpoints = [
                 `${BACKEND_BASE}/road-status?county=${encodeURIComponent(selectedCountyData.name)}`,
                 `http://127.0.0.1:8002/road-status?county=${encodeURIComponent(selectedCountyData.name)}`,
@@ -163,6 +148,7 @@ export default function App() {
                 }
             }
 
+            // All endpoints unreachable — set a placeholder so the panel shows something
             setRoadStatus({
                 area: selectedCountyData.name,
                 roadCount: 0,
@@ -174,7 +160,9 @@ export default function App() {
         }
 
         refreshRoadStatus()
-    }, [selectedCountyData])
+    // Re-run only when the selected county ID changes, not on every 3.5s data tick
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeCounty])
 
     return (
         <div className="min-h-screen bg-[#05070c] text-green-400">
@@ -184,10 +172,11 @@ export default function App() {
                 onSelectCounty={setActiveCounty}
                 layerState={layerState}
                 onSetLayer={setLayerState}
+                selectedCountyData={selectedCountyData}
             />
             <div className="px-4 pb-8 pt-20">
                 <GlobalOverview metrics={data.global} />
-                <div className="mt-4 grid grid-cols-12 grid-rows-6 gap-4">
+                <div className="mt-4 grid grid-cols-12 gap-4" style={{ gridTemplateRows: 'repeat(6, minmax(108px, 1fr))' }}>
                     <motion.div layout className="col-span-3 row-span-3 glow-border rounded-xl bg-[rgba(0,0,0,0.6)] p-4 glow-hover">
                         <EnergyInsightsPanel energy={data.energy} />
                     </motion.div>
@@ -195,6 +184,8 @@ export default function App() {
                         <CountyDetailPanel
                             data={selectedCountyData}
                             regions={regionalClimate}
+                            countyList={data.countyData}
+                            onSelectCounty={setActiveCounty}
                             onClose={() => setActiveCounty(null)}
                             inline
                         />
@@ -206,7 +197,7 @@ export default function App() {
                     <motion.div layout className="col-span-3 row-span-2 glow-border rounded-xl bg-[rgba(0,0,0,0.6)] p-4 glow-hover">
                         <TransportEmissionsPanel transport={data.transport} />
                     </motion.div>
-                    <motion.div layout className="col-span-3 row-span-1 glow-border rounded-xl bg-[rgba(0,0,0,0.6)] p-4 glow-hover">
+                    <motion.div layout className="col-span-3 row-span-2 glow-border rounded-xl bg-[rgba(0,0,0,0.6)] p-4 glow-hover">
                         <AIInsightBox selectedCountyData={selectedCountyData} />
                     </motion.div>
                     <motion.div layout className="col-span-6 row-span-4 glow-border rounded-xl bg-[rgba(0,0,0,0.7)] p-3 glow-hover">

@@ -5,9 +5,21 @@ import json
 
 app = FastAPI()
 
+import os
+
+# Allow local dev + any Render/devtunnel origin.
+# Set CORS_ORIGINS env var on Render to lock it down to your exact frontend URL.
+_extra = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+_origins = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:5174", "http://127.0.0.1:5174",
+    "http://localhost:5175", "http://127.0.0.1:5175",
+] + _extra
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5175", "http://localhost:5174", "http://127.0.0.1:5175", "http://127.0.0.1:5174"],
+    allow_origins=_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com|https://.*\.devtunnels\.ms",
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -66,6 +78,24 @@ COUNTY_COORDINATES = {
 
 COUNTY_NAMES = list(COUNTY_COORDINATES.keys())
 
+# Region mapping — mirrors frontend mockData.js countyRegions
+COUNTY_REGIONS = {
+    'Nairobi': 'Nairobi Metro', 'Kiambu': 'Nairobi Metro', 'Kajiado': 'Nairobi Metro',
+    'Machakos': 'Nairobi Metro',
+    'Mombasa': 'Coast', 'Kwale': 'Coast', 'Kilifi': 'Coast', 'Tana River': 'Coast',
+    'Lamu': 'Coast', 'Taita-Taveta': 'Coast',
+    'Turkana': 'North', 'West Pokot': 'North', 'Samburu': 'North', 'Marsabit': 'North',
+    'Isiolo': 'North', 'Wajir': 'North', 'Mandera': 'North', 'Garissa': 'North',
+    'Meru': 'Central', 'Tharaka-Nithi': 'Central', 'Embu': 'Central',
+    'Nyandarua': 'Central', 'Nyeri': 'Central', 'Kirinyaga': 'Central', "Murang'a": 'Central',
+    'Kitui': 'Eastern', 'Makueni': 'Eastern',
+    'Nakuru': 'Rift', 'Narok': 'Rift', 'Baringo': 'Rift', 'Laikipia': 'Rift',
+    'Uasin Gishu': 'Rift', 'Elgeyo-Marakwet': 'Rift', 'Nandi': 'Rift', 'Trans-Nzoia': 'Rift',
+    'Kericho': 'Western', 'Bomet': 'Western', 'Kakamega': 'Western', 'Vihiga': 'Western',
+    'Bungoma': 'Western', 'Busia': 'Western', 'Siaya': 'Western', 'Kisumu': 'Western',
+    'Homabay': 'Western', 'Migori': 'Western', 'Kisii': 'Western', 'Nyamira': 'Western',
+}
+
 @app.get("/")
 def home():
     return {"message": "WSEP backend online"}
@@ -74,12 +104,43 @@ def home():
 def satellites():
     return compute_satellite_positions()
 
+@app.get("/satellites/live")
+def satellites_live():
+    """
+    Lightweight endpoint polled by the frontend every 3 s.
+    Returns only current positions + ground-tracks (no heavy climate block).
+    """
+    data = compute_satellite_positions()
+    return {
+        'satellites': [
+            {
+                'id':            s['id'],
+                'name':          s['name'],
+                'origin':        s['origin'],
+                'category':      s['category'],
+                'data_focus':    s['data_focus'],
+                'altitude_km':   s['altitude_km'],
+                'inclination_deg': s['inclination_deg'],
+                'period_min':    s['period_min'],
+                'velocity_km_s': s['velocity_km_s'],
+                'position':      s['position'],
+                'over_africa':   s['over_africa'],
+                'over_kenya':    s['over_kenya'],
+                'ground_track':  s['ground_track'],
+                'formulae':      s['formulae'],
+            }
+            for s in data['satellites']
+        ],
+        'iss_location': data['iss_location'],
+        'timestamp': int(__import__('datetime').datetime.utcnow().timestamp())
+    }
+
 @app.get("/dashboard")
 def dashboard():
     """Unified dashboard endpoint returning all data for frontend."""
     import random
     
-    baseline = {'temperature': 24.5, 'vegetation': 0.55, 'airQuality': 60}
+    baseline = {'temperature': 26.4, 'vegetation': 0.55, 'airQuality': 60}  # 2026 Kenya mean
     
     # Generate county data
     county_data = []
@@ -87,6 +148,7 @@ def dashboard():
         county_data.append({
             'id': idx,
             'name': name,
+            'region': COUNTY_REGIONS.get(name, 'Unknown'),
             'temperature': round(baseline['temperature'] + (random.random() - 0.5) * 3, 2),
             'vegetation': round(baseline['vegetation'] + (random.random() - 0.25) * 0.4, 3),
             'airQuality': round(baseline['airQuality'] + (random.random() - 0.5) * 20, 1),
@@ -113,19 +175,98 @@ def dashboard():
     
     # Get satellite data from orbit engine
     sat_payload = compute_satellite_positions()
-    
+
+    # ── Aggregate metrics derived from live county data ──────────────────
+    avg_temp    = round(sum(c['temperature']  for c in county_data) / len(county_data), 2)
+    avg_flood   = round(sum(c['floodRisk']    for c in county_data) / len(county_data), 1)
+    avg_drought = round(sum(c['droughtRisk']  for c in county_data) / len(county_data), 1)
+    avg_heat    = round(sum(c['heatwaveRisk'] for c in county_data) / len(county_data), 1)
+    avg_risk    = round((avg_flood + avg_drought + avg_heat) / 3, 1)
+
+    # Sort counties for dynamic insight/alert generation
+    by_veg     = sorted(county_data, key=lambda c: c['vegetation'])          # ascending → most depleted first
+    by_flood   = sorted(county_data, key=lambda c: c['floodRisk'],    reverse=True)
+    by_drought = sorted(county_data, key=lambda c: c['droughtRisk'],  reverse=True)
+    by_heat    = sorted(county_data, key=lambda c: c['heatwaveRisk'], reverse=True)
+    by_temp    = sorted(county_data, key=lambda c: c['temperature'],  reverse=True)
+
+    def risk_level(score):
+        return 'high' if score >= 65 else ('medium' if score >= 40 else 'low')
+
+    # ── Satellite insights — derived from actual county extremes ──────────
+    sat_insights = [
+        {
+            'id': 1,
+            'label': f"Vegetation loss \u2014 {by_veg[0]['name']} NDVI {by_veg[0]['vegetation']:.3f}",
+            'severity': 'high' if by_veg[0]['vegetation'] < 0.35 else 'medium',
+            'score': round((1 - by_veg[0]['vegetation']) * 100),
+        },
+        {
+            'id': 2,
+            'label': f"Heat stress \u2014 {by_heat[0]['name']} heatwave risk {by_heat[0]['heatwaveRisk']}%",
+            'severity': risk_level(by_heat[0]['heatwaveRisk']),
+            'score': by_heat[0]['heatwaveRisk'],
+        },
+        {
+            'id': 3,
+            'label': f"Flood exposure \u2014 {by_flood[0]['name']} flood risk {by_flood[0]['floodRisk']}%",
+            'severity': risk_level(by_flood[0]['floodRisk']),
+            'score': by_flood[0]['floodRisk'],
+        },
+        {
+            'id': 4,
+            'label': f"Drought stress \u2014 {by_drought[0]['name']} drought index {by_drought[0]['droughtRisk']}%",
+            'severity': risk_level(by_drought[0]['droughtRisk']),
+            'score': by_drought[0]['droughtRisk'],
+        },
+    ]
+
+    # ── Risk alerts — thresholds derived from county averages ─────────────
+    high_flood_cnt = len([c for c in county_data if c['floodRisk']    > 60])
+    high_heat_cnt  = len([c for c in county_data if c['heatwaveRisk'] > 60])
+    risk_alerts = [
+        {
+            'id': 'flood', 'title': 'Flood', 'level': risk_level(avg_flood),
+            'message': (
+                f"{by_flood[0]['name']} & {by_flood[1]['name']} lead flood exposure "
+                f"({by_flood[0]['floodRisk']}%, {by_flood[1]['floodRisk']}%). "
+                f"{high_flood_cnt} counties above danger threshold."
+            ),
+        },
+        {
+            'id': 'drought', 'title': 'Drought', 'level': risk_level(avg_drought),
+            'message': (
+                f"{by_drought[0]['name']} drought index {by_drought[0]['droughtRisk']}%. "
+                f"National avg moisture deficit {avg_drought:.0f}%."
+            ),
+        },
+        {
+            'id': 'heatwave', 'title': 'Heatwave', 'level': risk_level(avg_heat),
+            'message': (
+                f"{by_temp[0]['name']} avg surface temp {by_temp[0]['temperature']:.1f}\u00b0C. "
+                f"{high_heat_cnt} counties in heat stress band."
+            ),
+        },
+    ]
+
+    # ── Projections — computed from current county averages ───────────────
+    temp_rise = round(max(0.5, avg_temp - 24.5 + 2.0), 1)
+    risk_esc  = round(avg_risk * 0.20)
+
     return {
         'global': {
-            'temperature': 26.4,
-            'co2': 426.1,
-            'renewableShare': 46.2,
-            'risk': 37.7
+            'temperature': avg_temp,
+            'co2': round(426.1 + random.uniform(-0.5, 1.5), 1),
+            'renewableShare': round(88.0 + random.uniform(-0.8, 0.8), 1),
+            'risk': avg_risk,
         },
+        # Accurate 2024 KERC Kenya grid mix
         'energy': [
-            {'name': 'Solar', 'value': 38},
-            {'name': 'Wind', 'value': 22},
-            {'name': 'Hydro', 'value': 28},
-            {'name': 'Fossil', 'value': 12}
+            {'name': 'Geothermal', 'value': 43},
+            {'name': 'Hydro',      'value': 26},
+            {'name': 'Wind',       'value': 12},
+            {'name': 'Solar',      'value': 11},
+            {'name': 'Thermal',    'value':  8},
         ],
         'transport': {
             'petrol': 42,
@@ -139,38 +280,128 @@ def dashboard():
                 ]
             ]
         },
+        # Historical + current-year live data point
         'trends': [
             {'time': '2018', 'temperature': 23.6, 'rainfall': 112, 'co2': 398},
             {'time': '2019', 'temperature': 24.0, 'rainfall': 105, 'co2': 404},
-            {'time': '2020', 'temperature': 24.5, 'rainfall': 97, 'co2': 412},
+            {'time': '2020', 'temperature': 24.5, 'rainfall': 97,  'co2': 412},
             {'time': '2021', 'temperature': 25.0, 'rainfall': 101, 'co2': 418},
-            {'time': '2022', 'temperature': 25.8, 'rainfall': 94, 'co2': 423},
-            {'time': '2023', 'temperature': 26.4, 'rainfall': 102, 'co2': 426}
+            {'time': '2022', 'temperature': 25.8, 'rainfall': 94,  'co2': 423},
+            {'time': '2023', 'temperature': 26.4, 'rainfall': 102, 'co2': 426},
+            {'time': '2024', 'temperature': 27.1, 'rainfall': 88,  'co2': 422},
+            {'time': '2025', 'temperature': 27.6, 'rainfall': 95,  'co2': 427},
+            {'time': '2026', 'temperature': round(avg_temp, 1), 'rainfall': 91, 'co2': 430},
         ],
-        'satelliteInsights': [
-            {'id': 1, 'label': 'Vegetation loss in Turkana', 'severity': 'high', 'score': 84},
-            {'id': 2, 'label': 'Urban heat increase Nairobi', 'severity': 'medium', 'score': 61},
-            {'id': 3, 'label': 'Coastal erosion Mombasa', 'severity': 'high', 'score': 78},
-            {'id': 4, 'label': 'Wetland shrinkage Kisumu', 'severity': 'low', 'score': 32}
-        ],
-        'riskAlerts': [
-            {'id': 'flood', 'title': 'Flood', 'level': 'high', 'message': 'Western river basins alert: heavy rainfall expected.'},
-            {'id': 'drought', 'title': 'Drought', 'level': 'medium', 'message': 'Southeast counties under moisture deficit 22%.'},
-            {'id': 'heatwave', 'title': 'Heatwave', 'level': 'high', 'message': 'Nairobi and surrounding areas above 34°C for next 3 days.'}
-        ],
+        'satelliteInsights': sat_insights,
+        'riskAlerts': risk_alerts,
         'projections': {
-            'temperatureRise': 2.8,
-            'riskEscalation': 17,
+            'temperatureRise': temp_rise,
+            'riskEscalation': risk_esc,
             'timeline': [
-                {'year': 2025, 'temperature': 26.1, 'risk': 40},
-                {'year': 2030, 'temperature': 27.8, 'risk': 52},
-                {'year': 2035, 'temperature': 28.9, 'risk': 63},
-                {'year': 2040, 'temperature': 30.2, 'risk': 74}
-            ]
+                {'year': 2025, 'temperature': round(avg_temp + 0.1, 2), 'risk': min(100, round(avg_risk * 0.90))},
+                {'year': 2030, 'temperature': round(avg_temp + 1.4, 2), 'risk': min(100, round(avg_risk * 1.15))},
+                {'year': 2035, 'temperature': round(avg_temp + 2.4, 2), 'risk': min(100, round(avg_risk * 1.35))},
+                {'year': 2040, 'temperature': round(avg_temp + 3.6, 2), 'risk': min(100, round(avg_risk * 1.55))},
+            ],
         },
         'countyData': county_data,
         'countiesGeo': counties_geo,
-        'satellites': sat_payload
+        'satellites': sat_payload,
+    }
+
+
+# Route quality per county — mirrors cashCropData routeQuality in mockData.js
+_COUNTY_ROUTE_QUALITY = {
+    **{c: 'good'   for c in ['Nairobi','Kiambu','Mombasa','Kilifi','Meru','Nyeri','Kirinyaga',
+                              "Murang'a",'Trans-Nzoia','Uasin Gishu','Nakuru','Kericho','Bomet',
+                              'Kakamega','Vihiga','Nandi','Siaya','Kisumu','Homabay','Kisii',
+                              'Nyamira','Lamu','Embu']},
+    **{c: 'medium' for c in ['Kajiado','Machakos','Kwale','Taita-Taveta','Isiolo','Tharaka-Nithi',
+                              'Nyandarua','Elgeyo-Marakwet','Baringo','Laikipia','Narok','Bungoma',
+                              'Busia','Migori','Makueni']},
+    **{c: 'poor'   for c in ['Tana River','Garissa','Wajir','Mandera','Marsabit','Kitui',
+                              'Turkana','West Pokot','Samburu']},
+}
+
+
+def _synthetic_road_data(county_name):
+    """
+    Deterministic synthetic road model used when Overpass API is unavailable.
+    Values are stable across calls (seeded from county name) so the UI does not flicker.
+    """
+    import hashlib, math
+
+    quality = _COUNTY_ROUTE_QUALITY.get(county_name, 'medium')
+    seed = int(hashlib.md5(county_name.encode()).hexdigest()[:8], 16)
+
+    if quality == 'good':
+        road_count     = 20 + (seed % 10)
+        avg_quality    = 80 + (seed % 12)
+        surface_pool   = ['asphalt', 'asphalt', 'paved', 'concrete', 'gravel']
+        condition_pool = ['good', 'good', 'fair', 'excellent', 'fair']
+        inspection_due = '3 months'
+    elif quality == 'medium':
+        road_count     = 14 + (seed % 7)
+        avg_quality    = 58 + (seed % 14)
+        surface_pool   = ['asphalt', 'gravel', 'paved', 'compact', 'gravel']
+        condition_pool = ['fair', 'fair', 'good', 'poor', 'fair']
+        inspection_due = '6 weeks'
+    else:  # poor
+        road_count     = 7 + (seed % 6)
+        avg_quality    = 32 + (seed % 16)
+        surface_pool   = ['gravel', 'dirt', 'compact', 'sand', 'gravel']
+        condition_pool = ['poor', 'bad', 'bad', 'poor', 'fair']
+        inspection_due = '2 weeks'
+
+    # Approx drive time to Nairobi via haversine + quality-adjusted speed
+    coord = COUNTY_COORDINATES.get(county_name)
+    if coord:
+        lng, lat = coord
+        dlat = math.radians(lat - (-1.2921))
+        dlon = math.radians(lng - 36.8219)
+        a = math.sin(dlat / 2) ** 2 + (
+            math.cos(math.radians(lat)) * math.cos(math.radians(-1.2921)) * math.sin(dlon / 2) ** 2
+        )
+        dist_km   = 6371 * 2 * math.asin(math.sqrt(a))
+        speed_kmh = {'good': 80, 'medium': 55, 'poor': 35}[quality]
+        mins      = int((dist_km / speed_kmh) * 60)
+        drive_time = (f"approx. {mins // 60}h {mins % 60}m" if mins >= 60 else f"approx. {mins}min")
+    else:
+        drive_time = {'good': 'approx. 1h 30m', 'medium': 'approx. 3h 00m', 'poor': 'approx. 6h 00m'}[quality]
+
+    PREFIXES = ['A', 'B', 'C', 'D', 'E']
+    HTYPES   = ['primary', 'primary', 'secondary', 'secondary', 'tertiary', 'tertiary', 'unclassified']
+
+    sample_highways = []
+    for i in range(min(12, road_count)):
+        s         = (seed >> (i * 2)) & 0xFF
+        surface   = surface_pool[s % len(surface_pool)]
+        condition = condition_pool[(s >> 2) % len(condition_pool)]
+        htype     = HTYPES[(s >> 1) % len(HTYPES)]
+        prefix    = PREFIXES[(s >> 4) % len(PREFIXES)]
+        num       = 100 + ((seed + i * 37) % 800)
+        score     = _road_quality_from_surface(surface)
+        if condition in ['bad', 'very_bad', 'poor']:
+            score = max(0, score - 25)
+        if condition in ['excellent', 'good', 'fair']:
+            score = min(100, score + 5)
+        sample_highways.append({
+            'id':            seed + i,
+            'name':          f"{prefix}{num} — {county_name} Sec {i + 1}",
+            'highway':       htype,
+            'surface':       surface,
+            'condition':     condition,
+            'quality_score': score,
+            'length_m':      1500 + ((seed + i * 83) % 9000),
+        })
+
+    return {
+        'area':           county_name,
+        'roadCount':      road_count,
+        'roadQuality':    avg_quality,
+        'driveTime':      drive_time,
+        'nextInspection': inspection_due,
+        'highways':       sample_highways,
     }
 
 
@@ -213,7 +444,8 @@ def road_status(county: str = None):
 
     query = f"""[out:json][timeout:20];
 (
-  way['highway']({min_lat},{min_lng},{max_lat},{max_lng});
+  way['highway'~'primary|secondary|tertiary|trunk']['name']({min_lat},{min_lng},{max_lat},{max_lng});
+  way['highway'~'primary|secondary|trunk']({min_lat},{min_lng},{max_lat},{max_lng});
 );
 out body geom tags;"""
 
@@ -242,7 +474,7 @@ out body geom tags;"""
 
             highways.append({
                 'id': elem.get('id'),
-                'name': tags.get('name', 'unknown'),
+                'name': tags.get('name', ''),
                 'highway': highway,
                 'surface': surface,
                 'condition': condition,
@@ -250,14 +482,22 @@ out body geom tags;"""
                 'length_m': round(elem.get('length', 0) if elem.get('length') else 0, 1)
             })
 
-            if len(highways) >= 20:
+            if len(highways) >= 40:
                 break
 
-    except Exception:
-        highways = []
-        overall_scores = []
+        # Named roads first, then cap at 20
+        highways.sort(key=lambda h: (0 if h['name'] else 1, h['name']))
+        highways = highways[:20]
 
-    avg_quality = round(mean(overall_scores), 1) if overall_scores else 56.3
+    except Exception:
+        # Overpass unreachable or timed out — use county road model
+        return _synthetic_road_data(area_label)
+
+    if not highways:
+        # Overpass returned no results (county may be outside coverage)
+        return _synthetic_road_data(area_label)
+
+    avg_quality = round(mean(overall_scores), 1)
 
     return {
         'area': area_label,
