@@ -96,9 +96,9 @@ COUNTY_REGIONS = {
     'Homabay': 'Western', 'Migori': 'Western', 'Kisii': 'Western', 'Nyamira': 'Western',
 }
 
-@app.get("/")
-def home():
-    return {"message": "WSEP backend online"}
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "message": "WSEP backend online"}
 
 @app.get("/satellites")
 def satellites():
