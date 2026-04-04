@@ -24,7 +24,11 @@ export default function App() {
     const [satellitesPayload, setSatellitesPayload] = useState(null)
     const [roadStatus, setRoadStatus] = useState(null)
 
-    const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'https://h44dmzlr-5173.uks1.devtunnels.ms/'
+    // Production (Render): frontend + backend on same origin → use relative URLs.
+    // Local dev: fall back to local backend.
+    const BACKEND_BASE = import.meta.env.PROD
+        ? ''
+        : (import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000')
 
     // Fetch unified dashboard data from backend
     useEffect(() => {

@@ -507,3 +507,10 @@ out body geom tags;"""
         'nextInspection': '2 months',
         'highways': highways
     }
+
+
+# ── Serve built React frontend (production / Render) ─────────────────────────
+_dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
+if os.path.isdir(_dist):
+    from fastapi.staticfiles import StaticFiles
+    app.mount('/', StaticFiles(directory=_dist, html=True), name='frontend')
